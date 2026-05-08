@@ -29,13 +29,11 @@
 ---
 x-airflow-common:
   &airflow-common
-  # ИСПРАВЛЕНИЕ: Сборка кастомного образа из Dockerfile вместо использования готового image
   build: .
   env_file:
     - ${ENV_FILE_PATH:-.env}
   environment:
     &airflow-common-env
-    # ИСПРАВЛЕНИЕ: Смена Executor на LocalExecutor, так как мы отключили redis и worker'ы
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
@@ -53,12 +51,10 @@ x-airflow-common:
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
-    # ИСПРАВЛЕНИЕ: Убрана зависимость от redis, так как сервис удален
     postgres:
       condition: service_healthy
 
 services:
-  # --- БАЗА ДАННЫХ ---
   postgres:
     image: postgres:16
     environment:
@@ -74,7 +70,6 @@ services:
       start_period: 5s
     restart: always
 
-  # --- ИНИЦИАЛИЗАЦИЯ ---
   airflow-init:
     <<: *airflow-common
     entrypoint: /bin/bash
@@ -96,12 +91,10 @@ services:
       <<: *airflow-common-env
       _AIRFLOW_DB_MIGRATE: 'true'
       _PIP_ADDITIONAL_REQUIREMENTS: ''
-      # ИСПРАВЛЕНИЕ: Заполнение кастомных учетных данных (если переменные заданы)
       _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
       _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
     user: "0:0"
 
-  # --- ВЕБ-СЕРВЕР ---
   airflow-webserver:
     <<: *airflow-common
     command: webserver
@@ -119,7 +112,6 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
-  # --- ПЛАНИРОВЩИК (SCHEDULER) ---
   airflow-scheduler:
     <<: *airflow-common
     command: scheduler
