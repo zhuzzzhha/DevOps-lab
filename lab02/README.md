@@ -37,3 +37,6 @@ Spark Master UI	http://localhost:4040
 1. Переходим на http://localhost:8081
 2. Включаем spark_job_dag через переключатель
 3. Триггерим DAG ("Trigger DAG)
+
+### Демонстрация работы
+![](img/1.png)
