@@ -25,8 +25,6 @@
 
 ## Деплой сервиса
 
-### Шаг 1: Клонирование репозитория
-
 ```
 docker compose up -d
 ```
@@ -35,7 +33,7 @@ docker compose up -d
 Airflow UI	http://localhost:8081
 Spark Master UI	http://localhost:4040
 
-### Шаг 2: Запуск DAG
+### Запуск DAG
 1. Переходим на http://localhost:8081
 2. Включаем spark_job_dag через переключатель
 3. Триггерим DAG ("Trigger DAG)
