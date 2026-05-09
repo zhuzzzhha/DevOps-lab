@@ -1,0 +1,26 @@
+stages:
+  - build
+  - deploy
+
+build-job:
+  image: docker:latest
+  stage: build
+  script:
+    - ls -la
+    - docker build -t image_name .
+
+deploy-job:
+  stage: deploy
+  image: tmaier/docker-compose:latest
+  script:
+  - echo "Deploying application..."
+  - ls -la
+  - docker-compose up -d
+  - echo "Application successfully deployed
+
+clear-job: 
+  stage: deploy
+  image: tmaier/docker-compose:latest
+  script:
+  - docker-compose rm -sf
+  when: manual
