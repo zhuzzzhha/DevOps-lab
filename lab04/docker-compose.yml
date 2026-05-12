@@ -1,0 +1,144 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 10
+    restart: always
+
+  spark-master:
+    container_name: spark-master
+    image: apache/spark:3.5.0
+    ports:
+      - "4040:8080"
+      - "7077:7077"
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080"]
+      interval: 30s
+      retries: 10
+    restart: always
+
+  spark-worker:
+    container_name: spark-worker
+    image: apache/spark:3.5.0
+    depends_on:
+      - spark-master
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8081"]
+      interval: 30s
+      retries: 10
+    restart: always
+
+  airflow-init:
+    build: .
+    container_name: lab02-airflow-init
+    command: bash -c "airflow db migrate && airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com || true; airflow connections add spark_default --conn-type spark --conn-host spark://spark-master --conn-port 7077 || true"
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      _AIRFLOW_WWW_USER_USERNAME: admin
+      _AIRFLOW_WWW_USER_PASSWORD: admin
+    depends_on:
+      spark-master:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./spark:/opt/airflow/spark
+
+  airflow-webserver:
+    build: .
+    container_name: lab02-airflow-webserver
+    command: airflow webserver
+    ports:
+      - "8081:8080"
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    depends_on:
+      - airflow-init
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./spark:/opt/airflow/spark
+    restart: always
+
+  airflow-scheduler:
+    build: .
+    container_name: lab02-airflow-scheduler
+    command: airflow scheduler
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    depends_on:
+      - airflow-init
+      - spark-master
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./spark:/opt/airflow/spark
+    restart: always
+
+  loki: # сервис-обработчик логов
+    image: grafana/loki:3.2.0
+    container_name: loki # имя контейнера Loki, важно для последующих шагов
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml # запуск с дефолтным конфигом
+    restart: always
+
+  alloy: # сервис-сборщик логов
+    image: grafana/alloy:v1.5.1
+    container_name: alloy
+    depends_on:
+      - loki
+    volumes:
+      - ./logs:/opt/logs # здесь ./logs - это локальная директория, которая монтируется в /opt/airflow/logs
+      - ./alloy.conf:/etc/alloy/config.alloy # локальное имя можно любое
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - /etc/alloy/config.alloy
+    restart: always
+
+  prometheus:
+    image: prom/prometheus:v2.48.1
+    container_name: prometheus # имя контейнера, важно для последующих шагов
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml # конфиг-файл, где описываем наши target-ы
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    depends_on:
+      - airflow-webserver
+    restart: always
+
+  grafana: # сервис визуализации
+    image: grafana/grafana:11.2.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+    depends_on:
+      - loki
+      - prometheus
+    restart: always
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+
+volumes:
+  postgres-db-volume:
